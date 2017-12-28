@@ -1,3 +1,8 @@
+// when goole map was not loaded properly, this function will handle it
+function googleMapError() {
+    $("#map").html("Oops, something goes wrong, we cannot load the map for you.")
+}
+
 // function for toggled sidebar
 $("#menu-toggle").click(function(e) {
     e.preventDefault();
@@ -43,30 +48,31 @@ function initMap() {
     // init google map InfoWindow
     largeInfowindow = new google.maps.InfoWindow();
 
-    // The following group uses the location array to create an array of markers on initialize.
-    for (var i = 0; i < locations.length; i++) {
-        // Get the position from the location array.
-        var position = locations[i].location;
-        var title = locations[i].title;
-        // Create a marker per location, and put into markers array.
+    // The following loop uses the location array to create an array of markers on initialize.
+    locations.forEach(function(location) {
+        // Get the position and title from the location array.
+        var position = location.location;
+        var title = location.title;
+        // Create a marker per location, and push into markers array.
         var marker = new google.maps.Marker({
             position: position,
             title: title,
             animation: google.maps.Animation.DROP,
             map: map,
-            icon: defaultIcon,
-            id: i
+            icon: defaultIcon
         });
         markers.push(marker);
+        // push marker into location object
+        location.marker = marker;
         // register click event for each marker
         marker.addListener('click', function() {
             // set all markers to default color, the highlighted color will be set in populateInfoWindow()
-            for (var i = markers.length - 1; i >= 0; i--) {
-                markers[i].setIcon(defaultIcon);
-            }
+            markers.forEach(function(marker) {
+                marker.setIcon(defaultIcon);
+            })
             populateInfoWindow(this, largeInfowindow);
         });
-    }
+    });
 }
 
 // populate InfoWindow, display location title and third party msg
@@ -76,29 +82,37 @@ function populateInfoWindow(marker, infowindow) {
         // set icon to highlighted color
         marker.setIcon(makeMarkerIcon('FFFF24'));
         infowindow.marker = marker;
-        // init some variables for AJAX call
+        // waiting for fetch() response
+        infowindow.setContent('<div>' + marker.title + '<br>Loading...</div>');
+        // init some variables for fetch()
         var ClientID = "UAGKZMPHOXZNSQRMP3CBM5E3S0ERCIRVBGF2I4EU0L1ZWLRI";
         var ClientSecret = "JFD5XKI0VKT4TIWKDCAMH4XHYERGZIBJ5M1ECFR0QSOSVVJA";
-        var requestData = {
-            client_id: ClientID,
-            client_secret: ClientSecret,
-            ll: marker.position.lat() + "," + marker.position.lng(),
-            v: '20170801',
-            limit: 1
-        };
-        // make AJAX call to foursquare
-        $.get("https://api.foursquare.com/v2/venues/explore", requestData, function(data) {
-            try {
-                // display response data in infowindow
-                var formattedRes = data.response.groups[0].items[0].tips[0].text;
-                infowindow.setContent('<div>' + marker.title + '<br>' + formattedRes + '</div>');
-            } catch (err) {
-                // if response doesn't contain the msg we want
-                infowindow.setContent('<div>' + marker.title + '<br>Sorry, we can not find information according to the provided lat & lng</div>');
+        var fullURL = "https://api.foursquare.com/v2/venues/explore?";
+        fullURL += "client_id=" + ClientID;
+        fullURL += "&client_secret=" + ClientSecret;
+        fullURL += "&ll=" + marker.position.lat() + "," + marker.position.lng();
+        fullURL += "&v=" + '20170801';
+        fullURL += "&limit=" + 1;
+        // fetch() from foursquare
+        fetch(fullURL).then(function(res) {
+            if (res.ok) {
+                // successfully get a response
+                res.json().then(function(data) {
+                    try {
+                        var formattedRes = data.response.groups[0].items[0].tips[0].text;
+                        infowindow.setContent('<div>' + marker.title + '<br>' + formattedRes + '</div>');
+                    } catch (err) {
+                        infowindow.setContent('<div>' + marker.title + '<br>Sorry, we can not find information according to the provided lat & lng</div>');
+                    }
+                });
+            } else {
+                // some typo in fullURL
+                var formattedRes = "Looks like the response wasn't perfect, got status" + res.status;
+                infowindow.setContent('<div>' + marker.title + "<br>" + formattedRes + '</div>');
             }
-        }, "json").fail(function(jqXHR) {
-            // deal with request error
-            var formattedRes = "There was a problem contacting the server: " + jqXHR.status + " " + jqXHR.responseText;
+        }, function(e) {
+            // offline error
+            var formattedRes = "Error: There was a problem contacting the server.";
             infowindow.setContent('<div>' + marker.title + "<br>" + formattedRes + '</div>');
         });
         // open infowindow
@@ -106,9 +120,9 @@ function populateInfoWindow(marker, infowindow) {
         // Make sure the marker property is cleared if the infowindow is closed.
         infowindow.addListener('closeclick', function() {
             // set call icon to default color
-            for (var i = markers.length - 1; i >= 0; i--) {
-                markers[i].setIcon(makeMarkerIcon('F65C50'));
-            }
+            markers.forEach(function(marker) {
+                marker.setIcon(makeMarkerIcon('F65C50'));
+            });
             infowindow.marker = null;
         });
     } else {
@@ -134,53 +148,63 @@ function listItemsViewModel() {
 
     // init observableArray
     self.listItems = ko.observableArray(locations);
-
+    // init currentSelected Item
+    self.currentSelected = ko.observable();
+    // init filter input
+    self.inputText = ko.observable();
+    // when click ListItem, modify currentSelected observable
+    self.selectItem = function(location) {
+        self.currentSelected(location.index);
+    }
     // operations when click ListItem
-    // First, add class "selected" to the ListItem
+    // First, modify currentSelected observable with corresponding index
     // Second, set corresponding marker icon to highlighted color
     // Third, populate corresponding InfoWindow
     self.showInfoWindow = function(Item) {
         var index = Item.index;
         //add class "selected" to the ListItem
-        $("a.selected").removeClass("selected");
-        var listItemsWrapper = document.getElementById("listItems-wrapper");
-        var listItems = listItemsWrapper.getElementsByTagName("a");
-        var indexOfList = self.listItems.indexOf(Item);
-        listItems[indexOfList].classList.add("selected");
+        self.currentSelected(index);
         // set all marker icon to default color
-        for (var i = markers.length - 1; i >= 0; i--) {
-            markers[i].setIcon(makeMarkerIcon('F65C50'));
-        }
+        markers.forEach(function(marker) {
+            marker.setIcon(makeMarkerIcon('F65C50'));
+        });
         // populate corresponding InfoWindow
         populateInfoWindow(markers[index], largeInfowindow);
     };
 
-    // operations for filter
-    self.filt = function() {
-        // get user input
-        var inputText = $("#filter").val();
+    // subscribe to filter input observable
+    self.inputText.subscribe(function(newValue) {
         // init local variable for filterResults
         var filterResults = [];
         // search each location title
-        for (var i = 0; i < locations.length; i++) {
+        locations.forEach(function(location) {
             // use toLowerCase() to get case-insensitive result
-            var lowerTitle = locations[i].title.toLowerCase();
-            var lowerInputText = inputText.toLowerCase();
+            var lowerTitle = location.title.toLowerCase();
+            var lowerInputText = newValue.toLowerCase();
+
             if (lowerTitle.match(lowerInputText) == null) {
-                // if this location doesn't match user input, remove marker from map
-                markers[i].setMap(null);
+                // if this location doesn't match user input, set it as invisible
+                location.marker.setVisible(false);
+                // if the marker with InfoWindow was eliminated
+                if (location.marker == largeInfowindow.marker) {
+                    // init Item list
+                    self.currentSelected(-1);
+                    // close Infowindow
+                    largeInfowindow.close();
+                    largeInfowindow.marker = null;
+                    // set marker to defaultColor
+                    location.marker.setIcon(makeMarkerIcon('F65C50'));
+                }
             } else {
-                // if it matches, push this location to filterResults, and drop marker on the map
-                filterResults.push(locations[i]);
-                markers[i].setMap(map);
+                // if it matches, push this location to filterResults, and set it as visible
+                filterResults.push(location);
+                location.marker.setVisible(true);
             }
-        }
+
+        });
         // update observableArray
         self.listItems(filterResults);
-    };
-
-    // register input event on filter
-    document.getElementById("filter").addEventListener("input", self.filt);
+    });
 }
 
 // apply binding

@@ -23,13 +23,13 @@
                 </li>
                 <li>
                     <p class="filter_btn">Filter</p>
-                    <input type="text" name="filter" class="filter_input" id="filter">
+                    <input type="text" name="filter" class="filter_input" id="filter" data-bind="textInput: inputText">
                 </li>
                 <!-- use foreach binding observableArray -->
                 <div data-bind="foreach: listItems" id="listItems-wrapper">
                     <li>
                         <!-- bind location title and click event -->
-                        <a href="#" data-bind="text: title, click: $root.showInfoWindow"></a>
+                        <a href="#" data-bind="text: title, css: { 'selected': index === $parent.currentSelected() }, click: $root.showInfoWindow"></a>
                     </li>
                 </div>
             </ul>
@@ -62,7 +62,7 @@
     <!-- Custom JavaScript -->
     <script src="js/maps.js"></script>
     <!-- Google Map API JavaScript -->
-    <script src="https://maps.googleapis.com/maps/api/js?&key=AIzaSyAS-UxgX7WtRuQ7Ue9ZHhzxExB_mWGu_-k&language=en&callback=initMap" async></script>
+    <script defer src="https://maps.googleapis.com/maps/api/js?&key=AIzaSyAS-UxgX7WtRuQ7Ue9ZHhzxExB_mWGu_-k&language=en&callback=initMap" onerror="googleMapError()"></script>
 </body>
 
 </html>
